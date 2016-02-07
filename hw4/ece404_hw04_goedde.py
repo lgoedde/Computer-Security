@@ -27,17 +27,31 @@ def genTables():
     return subBytesTable, invSubBytesTable
 
 def get_encryption_key():
-    with open("key.txt", 'r')as f:
-        key = f.readline()
+    bv = BitVector(filename="key.txt")
+    bitvec = bv.read_bits_from_file(128)
 
-    if len(key) != 16:
+    if len(bitvec) != 128:
         raise ValueError("Please give an encryption key that has 16 characters")
 
-    return key
+    temp = create_sarray()
+
+    for i in range(4):
+        for j in range(4):
+            byte = bitvec[32*i+8*j:32*i+8*(j+1)]
+            temp[j][i] = byte
+
+    key_array = []
+    for i in range(4):
+        key_array.append(temp[0][i]+temp[1][i]+temp[2][i]+temp[3][i])
+        print(key_array[i].get_bitvector_in_ascii())
+
+
+    return key_array
 
 def aes_encrypt(input_file, encrypted_file):
     subtable, invsubtable = genTables()
     bv = BitVector(filename=input_file)
+    key = get_encryption_key()
 
     while(bv.more_to_read):
         bitvec = bv.read_bits_from_file(128)
@@ -46,15 +60,22 @@ def aes_encrypt(input_file, encrypted_file):
             pad = 128 - len(bitvec)
             bitvec.pad_from_left(pad)
 
-        sarray = [[0 for x in range(4)] for x in range(4)]
+        sarray = create_sarray()
 
         for i in range(4):
             for j in range(4):
                 byte = bitvec[32*i+8*j:32*i+8*(j+1)]
                 sarray[j][i] = sub_bytes(byte, subtable)
 
-        shift_rows(sarray)
+        sarray = shift_rows(sarray)
+
+        for i in range(4):
+            for j in range(4):
+                sarray[j][i] = BitVector(intVal=sarray[j][i])
+
+        sarray = mix_columns(sarray)
         break
+
 
 def sub_bytes(byte, subtable):
 
@@ -69,11 +90,40 @@ def shift_rows(sarray):
     for i in range(4):
         sarray[i] = list(np.roll(sarray[i], -i))
 
+    return sarray
+
 def mix_columns(sarray):
-    pass
+    two = BitVector(intVal=2, size=8)
+    three = BitVector(intVal=3, size=8)
+
+    r_array = create_sarray()
+
+    for i in range(4):
+        for j in range(4):
+            if i == 0:
+                part1 = sarray[0][j].gf_multiply_modular(two, AES_modulus, 8)
+                part2 = sarray[1][j].gf_multiply_modular(three, AES_modulus, 8)
+                r_array[i][j] = part1 ^ part2 ^ sarray[2][j] ^ sarray[3][j]
+            elif i == 1:
+                part1 = sarray[1][j].gf_multiply_modular(two, AES_modulus, 8)
+                part2 = sarray[2][j].gf_multiply_modular(three, AES_modulus, 8)
+                r_array[i][j] = part1 ^ part2 ^ sarray[0][j] ^ sarray[3][j]
+            elif i == 2:
+                part1 = sarray[2][j].gf_multiply_modular(two, AES_modulus, 8)
+                part2 = sarray[3][j].gf_multiply_modular(three, AES_modulus, 8)
+                r_array[i][j] = part1 ^ part2 ^ sarray[0][j] ^ sarray[1][j]
+            elif i == 3:
+                part1 = sarray[3][j].gf_multiply_modular(two, AES_modulus, 8)
+                part2 = sarray[0][j].gf_multiply_modular(three, AES_modulus, 8)
+                r_array[i][j] = part1 ^ part2 ^ sarray[1][j] ^ sarray[2][j]
+
+    return r_array
 
 
+def create_sarray():
+    sarray = [[0 for x in range(4)] for x in range(4)]
 
+    return sarray
 
 
 
