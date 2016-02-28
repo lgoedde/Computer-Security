@@ -75,9 +75,7 @@ def keyGen(e):
                     return p,q
 
 
-def encrypt(e,p,q,data, file):
-
-    n = p * q
+def encrypt(e,n,data,file):
 
     e_data = []
     for item in data:
@@ -89,6 +87,8 @@ def encrypt(e,p,q,data, file):
 
     with open(file, 'w') as f:
         f.write("".join(e_data))
+        f.write("\n")
+        f.write("N: " + str(n))
 
     #return the data because we encrypt more than once
     return e_data
@@ -188,14 +188,23 @@ if __name__ == "__main__":
     n3 = p3 * q3
     data = getInput(16)
 
-    e_data1 = encrypt(e,p1,q1,data, "encrypted1.txt")
-    e_data2 = encrypt(e,p2,q2,data, "encrypted2.txt")
-    e_data3 = encrypt(e,p3,q3,data, "encrypted3.txt")
+    #Encrypt w/ three different e,n pairs
+    e_data1 = encrypt(e,n1,data, "encrypted1.txt")
+    e_data2 = encrypt(e,n2,data, "encrypted2.txt")
+    e_data3 = encrypt(e,n3,data, "encrypted3.txt")
 
-    test = CRT(e_data1,e_data2,e_data3,n1,n2,n3)
+    #Run the CRT to crack our encrypted data
+    cracked = CRT(e_data1,e_data2,e_data3,n1,n2,n3)
 
-    with open("cracked.txt", 'w') as f:
-        f.write(test.get_bitvector_in_ascii())
+    #save the cracked data to the ouput file given
+    args.output_file.write(cracked.get_bitvector_in_ascii().strip('\n'))
+
+    #we want the output in hex as well
+    with open("cracked_hex.txt", 'w') as f:
+        f.write(cracked.get_bitvector_in_hex().strip('\n'))
+
+
+
 
 
 
