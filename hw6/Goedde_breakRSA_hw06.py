@@ -3,6 +3,8 @@
 from BitVector import BitVector
 import argparse
 from PrimeGenerator import PrimeGenerator
+import numpy as np
+import sys
 
 def getInput(blocksize):
     #Made this modifiable so it can open ascii and hex string files
@@ -72,19 +74,8 @@ def keyGen(e):
                 if p_gcd == 1 and q_gcd == 1:
                     return p,q
 
-def findD(e,p,q):
-    #this is the algorithm for finding D according to the notes
-    totient = (p-1) * (q-1)
 
-    bv_tot = BitVector(intVal=totient)
-    bv_e = BitVector(intVal=e)
-
-    d = bv_e.multiplicative_inverse(bv_tot)
-    d = d.int_val()
-
-    return d
-
-def encrypt(e,p,q,data):
+def encrypt(e,p,q,data, file):
 
     n = p * q
 
@@ -96,58 +87,79 @@ def encrypt(e,p,q,data):
     #make each int a bitvector and then get the hex value
     e_data = [BitVector(intVal=x,size=256).get_bitvector_in_hex() for x in e_data]
 
-    #Join them all into one string
-    e_data = "".join(e_data)
+    with open(file, 'w') as f:
+        f.write("".join(e_data))
 
-    #write the data to the ouput file
-    args.output_file.write(e_data)
+    #return the data because we encrypt more than once
+    return e_data
 
-def decrypt(e,p,q,data):
-    #find D
-    d = findD(e,p,q)
-
-    in_hex = ''
-
-    for item in data:
-        item = int(item)
-
-        #need to use CRT to find MI
-        d_data = BitVector(intVal=CRT(item,p,q,d), size=256)
-
-        #get rid of those pesky 0's we added before
-        d_data = d_data[128:]
-
-        #save for writing
-        in_hex += d_data.get_bitvector_in_hex()
-
-        d_data = d_data.get_bitvector_in_ascii()
-        #write to a file
-        args.output_file.write(d_data.strip('\n'))
-
-    args.output_file.write("\n"+in_hex)
-
-    with open("pqd.txt", 'w') as f:
-        f.write("P: " + str(p)+'\n')
-        f.write("Q: " + str(q)+'\n')
-        f.write("D: " + str(d))
 
 #Chinese remainder theorem from pg. 35, Lecture 12
-def CRT(data, p, q, d):
-    p_bv = BitVector(intVal=p)
-    q_bv = BitVector(intVal=q)
+def CRT(data1, data2, data3, n1, n2, n3):
+    ntot = n1 * n2 * n3
 
-    vp = pow(data, d, p)
-    vq = pow(data, d, q)
+    #setting up values according to CRT lecture notes
+    N1 = int(ntot/n1)
+    N2 = int(ntot/n2)
+    N3 = int(ntot/n3)
 
-    xp = int(p_bv.multiplicative_inverse(q_bv))
-    xp *= p
+    bv_1 = BitVector(intVal=n1)
+    bv_2 = BitVector(intVal=n2)
+    bv_3 = BitVector(intVal=n3)
 
-    xq = int(q_bv.multiplicative_inverse(p_bv))
-    xq *= q
+    BV_1 = BitVector(intVal=N1)
+    BV_2 = BitVector(intVal=N2)
+    BV_3 = BitVector(intVal=N3)
 
-    final = (vp * xp + vq * xq) % (p * q)
+    part1 = int(BV_1.multiplicative_inverse(bv_1))
+    part2 = int(BV_2.multiplicative_inverse(bv_2))
+    part3 = int(BV_3.multiplicative_inverse(bv_3))
 
-    return final
+    #set up an empty Bitvector to add our cracked data onto
+    cracked = BitVector(size=0)
+    length = len(data1)
+
+    for i in range(length):
+        #turn the hex values into ints
+        data1[i] = int(data1[i],16)
+        data2[i] = int(data2[i], 16)
+        data3[i] = int(data3[i],16)
+
+        temp = (data1[i] * N1 * part1 + data2[i] * N2 * part2 + data3[i] * N3 * part3) % ntot
+        #need a more precise root function than python has
+        temp = solve_pRoot(3, temp)
+
+        cracked += BitVector(intVal=temp, size=128)
+
+    return cracked
+
+
+#solve_pRoot function from Prof. Avi's Website
+def solve_pRoot(p,y):
+    p = int(p)
+    y = int(y)
+    # Initial guess for xk
+    try:
+        xk = int(pow(y,1.0/p))
+    except:
+        # Necessary for larger value of y
+        # Approximate y as 2^a * y0
+        y0 = y
+        a = 0
+        while (y0 > sys.float_info.max):
+            y0 = y0 >> 1
+            a += 1
+        # log xk = log2 y / p
+        # log xk = (a + log2 y0) / p
+        xk = int(pow(2.0, ( a + np.log2(float(y0)) )/ p ))
+
+    # Solve for x using Newton's Method
+    err_k = pow(xk,p)-y
+    while (abs(err_k) > 1):
+        gk = p*pow(xk,p-1)
+        err_k = pow(xk,p)-y
+        xk = -err_k/gk + xk
+    return xk
 
 #gcd python function taken from Prof. Kak's lecture on Finite Fields(Lecture 5, pg. 20)
 def gcd(a,b):
@@ -159,37 +171,31 @@ def gcd(a,b):
 if __name__ == "__main__":
 
     #argparse is soooo much better for getting command line arguments
-    parser = argparse.ArgumentParser(description="Python implementation of the RSA encryption/decryption algorithm")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('-e', '--encrypt', action='store_true', default=False, help='Flag to tell the program to run encryption')
-    group.add_argument('-d', '--decrypt', action='store_true', default=False, help="Flag to tell the program to run decryption")
+    parser = argparse.ArgumentParser(description="Python implementation to break RSA for small values of e")
     parser.add_argument('input_file', type=argparse.FileType('r'))
     parser.add_argument('output_file', type=argparse.FileType('w'))
     args = parser.parse_args()
 
-    if args.encrypt:
-        e = 65537
-        p,q = keyGen(e)
+    #generate three sets of pub/priv keys
+    #low value of e, b/c they are easy to crack
+    e = 3
 
-        #save the primes to a file to use later
-        with open("primes.txt", 'w') as f:
-            f.write(str(p))
-            f.write('\n')
-            f.write(str(q))
+    p1, q1 = keyGen(e)
+    n1 = p1 * q1
+    p2, q2 = keyGen(e)
+    n2 = p2 * q2
+    p3, q3 = keyGen(e)
+    n3 = p3 * q3
+    data = getInput(16)
 
-        bv_data = getInput(16)
-        encrypt(e,p,q, bv_data)
+    e_data1 = encrypt(e,p1,q1,data, "encrypted1.txt")
+    e_data2 = encrypt(e,p2,q2,data, "encrypted2.txt")
+    e_data3 = encrypt(e,p3,q3,data, "encrypted3.txt")
 
+    test = CRT(e_data1,e_data2,e_data3,n1,n2,n3)
 
-    if args.decrypt:
-        e = 65537
-        #read primes from a file
-        with open("primes.txt", 'r') as f:
-            data = f.readlines()
-            p = int(data[0])
-            q = int(data[1])
+    with open("cracked.txt", 'w') as f:
+        f.write(test.get_bitvector_in_ascii())
 
-        bv_2 = getInput(64)
-        decrypt(e,p,q,bv_2)
 
 
